@@ -1,6 +1,5 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <errno.h>
 #include <sndfile.h>
 
 #include "vad.h"
@@ -17,7 +16,7 @@ int main(int argc, char *argv[]) {
   int n_read = 0, i;
 
   VAD_DATA *vad_data;
-  VAD_STATE state, last_state;
+  VAD_STATE state, last_state, last_valid_state = ST_SILENCE;
 
   float *buffer, *buffer_zeros;
   int frame_size;         /* in samples */
@@ -40,7 +39,7 @@ int main(int argc, char *argv[]) {
 
   /* Open input sound file */
   if ((sndfile_in = sf_open(input_wav, SFM_READ, &sf_info)) == 0) {
-    fprintf(stderr, "Error opening input file %s (%s)\n", input_wav, strerror(errno));
+    fprintf(stderr, "Error opening input file: %s\n", input_wav);
     return -1;
   }
 
@@ -51,14 +50,14 @@ int main(int argc, char *argv[]) {
 
   /* Open vad file */
   if ((vadfile = fopen(output_vad, "wt")) == 0) {
-    fprintf(stderr, "Error opening output vad file %s (%s)\n", output_vad, strerror(errno));
+    fprintf(stderr, "Error opening output vad file: %s\n", output_vad);
     return -1;
   }
 
   /* Open output sound file, with same format, channels, etc. than input */
-  if (output_wav) {
+  if (argc == 4) {
     if ((sndfile_out = sf_open(output_wav, SFM_WRITE, &sf_info)) == 0) {
-      fprintf(stderr, "Error opening output wav file %s (%s)\n", output_wav, strerror(errno));
+      fprintf(stderr, "Error opening output wav file: %s\n", output_wav);
       return -1;
     }
   }
@@ -79,6 +78,7 @@ int main(int argc, char *argv[]) {
 
     if (sndfile_out != 0) {
       /* TODO: copy all the samples into sndfile_out */
+
     }
 
     state = vad(vad_data, buffer);
@@ -86,11 +86,19 @@ int main(int argc, char *argv[]) {
 
     /* TODO: print only SILENCE and VOICE labels */
     /* As it is, it prints UNDEF segments but is should be merge to the proper value */
+    //if (state != last_state && state != ST_UNDEF) {
     if (state != last_state) {
-      if (t != last_t)
-        fprintf(vadfile, "%.5f\t%.5f\t%s\n", last_t * frame_duration, t * frame_duration, state2str(last_state));
-      last_state = state;
-      last_t = t;
+      if (t != last_t) {
+        if ((last_valid_state != state) && (state == ST_VOICE || state == ST_SILENCE) 
+            && (last_state == ST_MS || last_state == ST_MV)){
+
+          
+            fprintf(vadfile, "%.5f\t%.5f\t%s\n", last_t * frame_duration, (t-1) * frame_duration, state2str(last_valid_state));
+          last_valid_state = state;
+          last_t = t-1;
+        }
+        last_state = state;
+      }
     }
 
     if (sndfile_out != 0) {
